@@ -1,0 +1,14 @@
+{
+  "name": "@kto-zaplacil/core",
+  "version": "0.1.0",
+  "description": "Matches KSeF invoice numbers in bank statements against sales invoices.",
+  "license": "AGPL-3.0-only",
+  "repository": "github:kto-zaplacil/core",
+  "main": "kto-zaplacil.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "^0.9.12"
+  }
+}
