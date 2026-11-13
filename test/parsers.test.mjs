@@ -100,6 +100,11 @@ describe('parseCSV (bank statement)', () => {
         assert.deepEqual(txs.map(t => [t.amount, t.credit]), [[100, true], [-40, false]]);
     });
 
+    it('reads the direction from a single Credit/Debit column', () => {
+        const { txs } = parseCSV('Date;Description;Credit/Debit;Amount\n2026-12-02;FV 1;Credit;100.00\n2026-12-03;b;Debit;40.00\n');
+        assert.deepEqual(txs.map(t => [t.amount, t.credit]), [[100, true], [-40, false]]);
+    });
+
     it('skips rows without an amount', () => {
         assert.equal(parseCSV('Data;Tytuł;Kwota\n2026-12-02;a;10,00\n;Saldo końcowe;\n').txs.length, 1);
     });

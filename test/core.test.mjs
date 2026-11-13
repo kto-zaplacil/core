@@ -35,6 +35,11 @@ describe('amounts', () => {
         assert.equal(parseAmount('1,230.50'), 1230.5);
         assert.equal(parseAmount('-45,10'), -45.1);
     });
+
+    it('reads a lone 3-digit group as thousands, not decimals', () => {
+        assert.equal(parseAmount('1,230'), 1230);
+        assert.equal(parseAmount('1.230'), 1230);
+    });
 });
 
 describe('statements', () => {
@@ -71,8 +76,9 @@ describe('invoice-number regex', () => {
         const re = invoiceRegex('FV 2026/12/014');
         for (const ok of ['ZA FV2026-12-014', 'fv 2026 12 014 dzięki', 'FV/2026/12/014']) assert.ok(re.test(ok.toUpperCase()), ok);
         for (const no of ['FV 2026/12/0140', 'FV 2026/12/01', 'XFV 2026/12/014']) assert.ok(!re.test(no), no);
-        assert.ok(invoiceRegex('1/2026').test('FAKTURA 1/2026'));
-        assert.ok(!invoiceRegex('1/2026').test('FAKTURA 21/2026'));
+        assert.equal(invoiceRegex('1/2026'), null);
+        assert.ok(invoiceRegexes('1/2026').loose.test('FAKTURA 1/2026'));
+        assert.ok(!invoiceRegexes('1/2026').loose.test('FAKTURA 21/2026'));
         assert.equal(invoiceRegex('101'), null);
     });
 });
@@ -116,6 +122,11 @@ describe('matching payments to invoices', () => {
         };
 
         it('parses all invoices', () => assert.equal(real.length, 5));
+        it('a correction with a negative amount is not unpaid', () => {
+            const r = analyze('', real);
+            assert.equal(r.invoices.find(i => i.number === 'FK 7/2026').status, 'correction');
+            assert.equal(r.stats.unpaid, 4);
+        });
         it('no prefix, dropped zeros', () => assert.deepEqual(hit('Faktura 14/12/2026'), ['nr', ['FV/0014/12/2026']]));
         it('ambiguous without prefix: both shown', () => assert.deepEqual(hit('zapłata za fakturę 7/2026'), ['nr', ['FV 7/2026', 'FK 7/2026']]));
         it('full number beats the correction FK 7/2026', () => assert.deepEqual(hit('FV 7/2026'), ['nr', ['FV 7/2026']]));
@@ -140,6 +151,12 @@ describe('matching payments to invoices', () => {
             const r = analyze(pko, inv);
             assert.equal(r.incoming[0].title, 'Tytuł: Czynsz za 01/2026');
             assert.deepEqual([r.incoming[0].matches, r.invoices[0].status], [[], 'unpaid']);
+        });
+        it('a number without a prefix is not matched by a month or a date column', () => {
+            const plain = parseInvoiceCSV('Numer;Brutto\n1/2026;500,00\n14/12/2026;900,00\n');
+            const r = analyze('Data;Tytuł;Kwota\n2026-12-10;Czynsz za 01/2026;800,00\n14.12.2026;Wynagrodzenie;50,00\n', plain);
+            assert.deepEqual(r.incoming.map(t => t.matches.length), [0, 0]);
+            assert.deepEqual(analyze(statement([['Faktura 1/2026', '200,00']]), plain).incoming[0].matches.map(m => m.inv.number), ['1/2026']);
         });
         it('marks the invoice unpaid when the payment was rent', () => {
             assert.equal(analyze(statement([['Czynsz za 01/2026', '500,01']]), inv).invoices[0].status, 'unpaid');

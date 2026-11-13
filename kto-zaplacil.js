@@ -42,7 +42,8 @@ function classify(ids) {
 function parseAmount(s) {
     s = String(s ?? '').replace(/−/g, '-').replace(/[^\d,.\-]/g, '');
     const d = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
-    if (d < 0) return parseFloat(s);
+    // Money never has 3 decimals: "1,230" and "1.230" are thousands.
+    if (d < 0 || s.length - d === 4) return parseFloat(s.replace(/[,.]/g, ''));
     return parseFloat(s.slice(0, d).replace(/[,.]/g, '') + '.' + s.slice(d + 1));
 }
 
@@ -111,7 +112,10 @@ function parseCSV(text) {
     const cTitle = col(/tytu/) >= 0 ? col(/tytu/) : col(/opis|title|szczeg|descr/);
     const cName = col(/kontrahent|nadawc|odbiorc|nazwa|counterparty/);
     const txs = rows.slice(hi + 1).map(r => {
-        const amount = cIn >= 0 && cOut >= 0
+        // One "Credit/Debit" header matches both: it holds the direction, and the amount is in its own column.
+        const amount = cIn >= 0 && cIn === cOut
+            ? Math.abs(parseAmount(r[cAmt])) * (/^\s*(d|obc)/i.test(r[cIn] || '') ? -1 : 1)
+            : cIn >= 0 && cOut >= 0
             ? (r[cIn]?.trim() ? Math.abs(parseAmount(r[cIn])) : -Math.abs(parseAmount(r[cOut])))
             : parseAmount(r[cAmt]);
         // Whole row is searched: some banks (e.g. PKO) spill the title into unnamed trailing columns.
@@ -199,12 +203,14 @@ function invoiceRegexes(number) {
     if (parts.length < 2 && parts.join('').length < 6) return { strict: null, loose: null, keys: [] }; // a bare "101" would match noise
     const pat = p => /^\d+$/.test(p) ? '0*' + p.replace(/^0+(?=\d)/, '') : p; // payers drop leading zeros
     const re = ps => new RegExp(`(?<![A-Z0-9])${ps.map(pat).join('[\\s/\\\\_.-]*')}(?![A-Z0-9])`);
+    // Any match contains every numeric part without its leading zeros: a cheap pre-check before the regex.
+    const keys = parts.filter(p => /^\d+$/.test(p)).map(p => p.replace(/^0+(?=\d)/, ''));
     const lead = parts.findIndex(p => /\d/.test(p));
+    // Without a letter prefix "1/2026" also reads as a month or a date, so it only ever matches loosely.
+    if (lead === 0) return { strict: null, loose: re(parts), keys };
     const body = lead < 0 ? [] : parts.slice(lead);
     // Payers often skip the series prefix ("FV", "FA"); allow that only when the numeric rest is still distinctive.
     const loose = lead > 0 && body.length >= 2 && body.join('').length >= 5 ? re(body) : null;
-    // Any match contains every numeric part without its leading zeros: a cheap pre-check before the regex.
-    const keys = parts.filter(p => /^\d+$/.test(p)).map(p => p.replace(/^0+(?=\d)/, ''));
     return { strict: re(parts), loose, keys };
 }
 
@@ -244,7 +250,8 @@ function matchInvoices(incoming, invoices) {
         }
         t.overpaid = t.matches.length ? left : 0;
     }
-    for (const inv of invoices) inv.status = inv.paid <= 0 ? 'unpaid' : isNaN(inv.gross) || inv.paid >= inv.gross ? 'paid' : 'partial';
+    // A correction with a negative amount is owed to the buyer, so it is never "unpaid".
+    for (const inv of invoices) inv.status = inv.gross < 0 ? 'correction' : inv.paid <= 0 ? 'unpaid' : isNaN(inv.gross) || inv.paid >= inv.gross ? 'paid' : 'partial';
 }
 
 // Search box: an invoice number typed by the user -> matching invoices and the payments for them.
