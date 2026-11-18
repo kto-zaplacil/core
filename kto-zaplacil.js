@@ -81,7 +81,7 @@ function parseCSVRows(text, d) {
         const c = text[i];
         if (q) {
             if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c;
-        } else if (c === '"') q = true;
+        } else if (c === '"' && cell === '') q = true; // a quote mid-cell (27" monitor) is text, or it would swallow the rest of the file
         else if (c === d) { row.push(cell); cell = ''; }
         else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
         else if (c !== '\r') cell += c;
@@ -139,7 +139,8 @@ function parseCAMT(xml) {
             return {
                 date: date ? date.textContent.slice(0, 10) : '',
                 credit,
-                amount: parseAmount(q(e, 'Amt')[0]?.textContent) * (credit ? 1 : -1),
+                // XML amounts always use a dot for decimals, so the CSV thousands rule in parseAmount does not apply.
+                amount: parseFloat(q(e, 'Amt')[0]?.textContent) * (credit ? 1 : -1),
                 name: nm ? nm.textContent.trim() : '',
                 title,
                 // Minified XML has no space between fields, and a digit right before a number blocks its match. Title first, so a number split across Ustrd lines stays whole.
@@ -180,7 +181,7 @@ function parseInvoiceCSV(text) {
     const h = rows[hi].map(c => c.replace(/^#/, '').trim().toLowerCase());
     const col = (re, not) => h.findIndex(c => re.test(c) && !(not && not.test(c)));
     const cNo = col(/numer|^nr|number/, /ksef|nip|konta|rachun|zamów/);
-    const cGross = [col(/brutto|gross/), col(/zapłat|razem|total/), col(/kwota|wartość|amount/, /netto|net\b|vat/)].find(i => i >= 0);
+    const cGross = [col(/brutto|gross/), col(/zapłat|razem|total/, /termin|data|date/), col(/kwota|wartość|amount/, /netto|net\b|vat/)].find(i => i >= 0);
     const cBuyer = col(/nabywc|kontrahent|klient|buyer|odbiorc/, /nip/), cKsef = col(/ksef/), cDate = col(/data/);
     return rows.slice(hi + 1).map(r => ({
         number: (r[cNo] || '').trim(),
@@ -250,8 +251,8 @@ function matchInvoices(incoming, invoices) {
         }
         t.overpaid = t.matches.length ? left : 0;
     }
-    // A correction with a negative amount is owed to the buyer, so it is never "unpaid".
-    for (const inv of invoices) inv.status = inv.gross < 0 ? 'correction' : inv.paid <= 0 ? 'unpaid' : isNaN(inv.gross) || inv.paid >= inv.gross ? 'paid' : 'partial';
+    // A correction with a negative amount is owed to the buyer, and one with a zero amount changes only data: never "unpaid".
+    for (const inv of invoices) inv.status = inv.gross <= 0 ? 'correction' : inv.paid <= 0 ? 'unpaid' : isNaN(inv.gross) || inv.paid >= inv.gross ? 'paid' : 'partial';
 }
 
 // Search box: an invoice number typed by the user -> matching invoices and the payments for them.

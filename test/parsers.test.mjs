@@ -80,6 +80,10 @@ describe('parseCSVRows', () => {
         assert.deepEqual(parseCSVRows('a;"b;c";"say ""hi"""\r\n"multi\nline";x', ';'), [['a', 'b;c', 'say "hi"'], ['multi\nline', 'x']]);
     });
 
+    it('keeps a quote in the middle of an unquoted cell as text', () => {
+        assert.deepEqual(parseCSVRows('a;monitor 27" zakup\nb;FV 1/2026\n', ';'), [['a', 'monitor 27" zakup'], ['b', 'FV 1/2026']]);
+    });
+
     it('keeps a last row without a trailing newline', () => {
         assert.deepEqual(parseCSVRows('a,b\nc,d', ','), [['a', 'b'], ['c', 'd']]);
     });
@@ -145,6 +149,11 @@ describe('parseCAMT (CAMT.053 XML)', () => {
         ]);
     });
 
+    it('reads XML amounts with a dot decimal, even with 3 decimals', () => {
+        const amount = a => parseCAMT(`<Document><Ntry><Amt>${a}</Amt><CdtDbtInd>CRDT</CdtDbtInd></Ntry></Document>`).txs[0].amount;
+        assert.deepEqual(['1230.000', '1230.5', '1230'].map(amount), [1230, 1230.5, 1230]);
+    });
+
     it('is picked by parseStatement, even after a BOM', () => {
         assert.equal(parseStatement('﻿' + camt).format, 'CAMT.053');
     });
@@ -197,6 +206,10 @@ describe('parseInvoiceCSV', () => {
         const csv = 'Lp;Numer KSeF;NIP nabywcy;Nabywca;Numer faktury;Data wystawienia;Kwota netto;Kwota brutto\n'
             + `1;${KSEF};1111111111;ACME;FV 1/2026;2026-01-05;1000,00;1 230,00\n`;
         assert.deepEqual(parseInvoiceCSV(csv), [{ number: 'FV 1/2026', date: '2026-01-05', gross: 1230, buyer: 'ACME', ksef: KSEF }]);
+    });
+
+    it('does not take a due-date column for the amount', () => {
+        assert.equal(parseInvoiceCSV('Numer;Termin zapłaty;Do zapłaty\nFV 1/2026;2026-12-20;1 230,00\n')[0].gross, 1230);
     });
 
     it('drops an invalid KSeF number and rows without a number', () => {

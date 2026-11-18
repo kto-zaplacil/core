@@ -127,6 +127,9 @@ describe('matching payments to invoices', () => {
             assert.equal(r.invoices.find(i => i.number === 'FK 7/2026').status, 'correction');
             assert.equal(r.stats.unpaid, 4);
         });
+        it('a zero-amount correction (data only) is not unpaid', () => {
+            assert.equal(analyze('', parseInvoiceCSV('Numer;Brutto\nFK 8/2026;0,00\n')).invoices[0].status, 'correction');
+        });
         it('no prefix, dropped zeros', () => assert.deepEqual(hit('Faktura 14/12/2026'), ['nr', ['FV/0014/12/2026']]));
         it('ambiguous without prefix: both shown', () => assert.deepEqual(hit('zapłata za fakturę 7/2026'), ['nr', ['FV 7/2026', 'FK 7/2026']]));
         it('full number beats the correction FK 7/2026', () => assert.deepEqual(hit('FV 7/2026'), ['nr', ['FV 7/2026']]));
